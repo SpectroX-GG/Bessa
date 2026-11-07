@@ -212,7 +212,7 @@
   </div>
 </div>
 <script>
-const EMPLOYEES=['Elinsberg','Ronaldo','Alex'];
+const EMPLOYEES=['Elinsberg','Ronaldo','Alex','Bessa'];
 const MATERIALS=['Manifold','Bomba de vácuo','Nitrogênio / teste de pressão','Chaves reguláveis','Parafusadeira','Furadeira e brocas','Tubulação de cobre','Isolamento térmico','Cabo PP / cabos elétricos','Mangueira de dreno','Suporte da condensadora','Parafusos e buchas','Fita PVC / fita elastomérica','Porcas e conexões','Canaleta','Disjuntor','Flangeador','Cortador de tubos','Nível','Escada','EPIs'];
 const STATUS={saved:'Salva',scheduled:'Agendada',in_progress:'Em andamento',completed:'Concluída',cancelled:'Cancelada'};
 const FIXED_PAY=400,PER_INSTALL=10;
@@ -592,14 +592,45 @@ function toggleScheduleFields(mode){
     dateLabel.textContent = mode==='completed' ? 'Data em que foi feito *' : 'Data do agendamento *';
   }
 }
-function captureLocation(){
+async function captureLocation(){
   const btn=document.getElementById('btnGeo'),info=document.getElementById('geoInfo');
+  const addressInput=document.querySelector('#modalBg input[name="address"]');
+  const cityInput=document.querySelector('#modalBg input[name="city"]');
   if(!navigator.geolocation){alert('Este aparelho não oferece geolocalização.');return}
   btn.textContent='Obtendo localização...';btn.disabled=true;
-  navigator.geolocation.getCurrentPosition(pos=>{
+  navigator.geolocation.getCurrentPosition(async pos=>{
     formGeo={latitude:pos.coords.latitude,longitude:pos.coords.longitude};locationPermission='granted';
+    btn.textContent='Buscando endereço...';
+    let addressMessage='Coordenadas capturadas. Não foi possível identificar o endereço automaticamente; preencha rua, número e bairro.';
+    try{
+      const url=`https://nominatim.openstreetmap.org/reverse?format=jsonv2&addressdetails=1&zoom=18&lat=${encodeURIComponent(formGeo.latitude)}&lon=${encodeURIComponent(formGeo.longitude)}&accept-language=pt-BR`;
+      const response=await fetch(url,{headers:{'Accept':'application/json'}});
+      if(!response.ok)throw new Error('Falha na consulta do endereço');
+      const data=await response.json();
+      const a=data.address||{};
+      const road=a.road||a.pedestrian||a.residential||a.footway||a.path||'';
+      const house=a.house_number||'';
+      const neighbourhood=a.neighbourhood||a.suburb||a.quarter||a.city_district||a.hamlet||'';
+      const locality=a.city||a.town||a.village||a.municipality||'';
+      const parts=[];
+      if(road)parts.push(road);
+      if(house)parts.push(`nº ${house}`);
+      if(neighbourhood&&!parts.some(x=>x.toLocaleLowerCase('pt-BR')===neighbourhood.toLocaleLowerCase('pt-BR')))parts.push(neighbourhood);
+      if(parts.length&&addressInput)addressInput.value=parts.join(', ');
+      if(locality&&cityInput)cityInput.value=locality+(a.state?` - ${a.state}`:'');
+      if(parts.length){
+        addressMessage=house
+          ?'Endereço preenchido automaticamente com rua, número e bairro. Confira antes de salvar.'
+          :'Rua e bairro preenchidos quando disponíveis. O GPS não identificou o número da casa; confira e complete esse campo antes de salvar.';
+      }else if(data.display_name&&addressInput){
+        addressInput.value=data.display_name;
+        addressMessage='Endereço aproximado preenchido. Confira rua, número e bairro antes de salvar.';
+      }
+    }catch(error){
+      addressMessage='Coordenadas capturadas, mas não foi possível consultar o endereço. Verifique a internet e preencha rua, número e bairro manualmente.';
+    }
     btn.textContent='✓ Localização capturada — tocar para atualizar';btn.classList.add('captured');btn.disabled=false;
-    info.innerHTML=`Coordenadas: ${formGeo.latitude.toFixed(6)}, ${formGeo.longitude.toFixed(6)}<br><small>O endereço escrito acima continua valendo. O GPS deixa a rota mais precisa.</small>`;info.classList.add('show');
+    info.innerHTML=`Coordenadas: ${formGeo.latitude.toFixed(6)}, ${formGeo.longitude.toFixed(6)}<br><small>${esc(addressMessage)}</small>`;info.classList.add('show');
   },err=>{
     btn.textContent='📍 Capturar minha localização atual';btn.disabled=false;
     let msg='Não foi possível obter a localização.';
